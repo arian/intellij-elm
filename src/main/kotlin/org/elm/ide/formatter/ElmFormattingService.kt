@@ -12,12 +12,11 @@ import org.elm.workspace.commandLineTools.ElmFormatCLI
 import org.elm.workspace.commandLineTools.ElmFormatCLI.ElmFormatResult
 import org.elm.workspace.elmToolchain
 
-
-private val VirtualFile.document: Document?
-    get() = FileDocumentManager.getInstance().getDocument(this)
-
 @Suppress("UnstableApiUsage")
 class ElmFormattingService : AsyncDocumentFormattingService() {
+
+    private val VirtualFile.document: Document?
+        get() = FileDocumentManager.getInstance().getDocument(this)
 
     override fun getFeatures(): Set<FormattingService.Feature> =
         setOf()
