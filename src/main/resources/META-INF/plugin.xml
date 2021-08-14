@@ -382,6 +382,8 @@
         <codeStyleSettingsProvider implementation="org.elm.ide.formatter.settings.ElmCodeStyleSettingsProvider"/>
         <langCodeStyleSettingsProvider implementation="org.elm.ide.formatter.settings.ElmLanguageCodeStyleSettingsProvider"/>
 
+        <formattingService implementation="org.elm.ide.formatter.ElmFormattingService"/>
+
         <!-- New Project for IDEA -->
         <projectTemplatesFactory implementation="org.elm.ide.project.ElmProjectTemplatesFactory" />
 
@@ -546,9 +548,6 @@
     <project-components>
         <component>
             <implementation-class>org.elm.lang.core.psi.ElmPsiManager</implementation-class>
-        </component>
-        <component>
-            <implementation-class>org.elm.ide.components.ElmFormatOnFileSaveComponent</implementation-class>
         </component>
     </project-components>
 

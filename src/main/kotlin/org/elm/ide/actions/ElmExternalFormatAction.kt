@@ -48,7 +48,7 @@ class ElmExternalFormatAction : AnAction() {
             return
         }
 
-        val result = elmFormat.formatDocumentAndSetText(project, document, ctx.elmVersion, addToUndoStack = true)
+        val result = elmFormat.formatDocumentAndSetText(project, document, ctx.elmVersion)
         when (result) {
             is ElmFormatResult.BadSyntax -> {
                 project.showBalloon(result.msg, NotificationType.WARNING, "Show Errors" to {

@@ -5,11 +5,11 @@ import com.intellij.execution.process.ProcessNotCreatedException
 import com.intellij.execution.process.ProcessOutput
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.CommandProcessor
-import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiFile
 import org.elm.lang.core.psi.ElmFile
 import org.elm.openapiext.GeneralCommandLine
 import org.elm.openapiext.Result
@@ -21,9 +21,6 @@ import org.elm.workspace.ParseException
 import org.elm.workspace.Version
 import java.nio.file.Path
 
-private val log = logger<ElmFormatCLI>()
-
-
 /**
  * Interact with external `elm-format` process.
  */
@@ -31,29 +28,29 @@ class ElmFormatCLI(private val elmFormatExecutablePath: Path) {
 
     private fun getFormattedContentOfDocument(elmVersion: Version, document: Document): ProcessOutput {
         val arguments = listOf(
-                "--yes",
-                "--elm-version=${elmVersion.x}.${elmVersion.y}",
-                "--stdin"
+            "--yes",
+            "--elm-version=${elmVersion.x}.${elmVersion.y}",
+            "--stdin"
         )
 
         return GeneralCommandLine(elmFormatExecutablePath)
-                .withParameters(arguments)
-                .execute(document.text)
+            .withParameters(arguments)
+            .execute(document.text)
     }
 
     sealed class ElmFormatResult(val msg: String, val cause: Throwable? = null) {
-        class Success : ElmFormatResult("ok")
+        class Success(val formatted: String) : ElmFormatResult("ok")
         class BadSyntax : ElmFormatResult("elm-format encountered syntax errors that it could not fix")
         class FailedToStart : ElmFormatResult("Failed to launch elm-format. Is the path correct?")
-        class UnknownFailure(msg: String? = null, cause: Throwable?) : ElmFormatResult(msg
-                ?: "Something went wrong running elm-format", cause)
+        class UnknownFailure(msg: String? = null, cause: Throwable?) : ElmFormatResult(
+            msg
+                ?: "Something went wrong running elm-format", cause
+        )
     }
 
-    fun formatDocumentAndSetText(project: Project, document: Document, version: Version, addToUndoStack: Boolean): ElmFormatResult {
+    fun format(document: Document, version: Version): ElmFormatResult {
         val processOutput = try {
-            ProgressManager.getInstance().runProcessWithProgressSynchronously<ProcessOutput, ExecutionException>({
-                getFormattedContentOfDocument(version, document)
-            }, "Running elm-format on current file...", true, project)
+            getFormattedContentOfDocument(version, document)
         } catch (e: ExecutionException) {
             val msg = e.message ?: "unknown"
             return when {
@@ -63,28 +60,40 @@ class ElmFormatCLI(private val elmFormatExecutablePath: Path) {
             }
         }
 
-        if (processOutput.isNotSuccess) return ElmFormatResult.UnknownFailure("Process output exit code was non-zero", cause = null)
-
-        val formatted = processOutput.stdout
-        val source = document.text
-
-        if (source != formatted) {
-            val action = {
-                ApplicationManager.getApplication().runWriteAction {
-                    document.setText(formatted)
-                }
-            }
-
-            with(CommandProcessor.getInstance()) {
-                when {
-                    addToUndoStack -> executeCommand(project, action, "Run elm-format on current file", null, document)
-                    else -> runUndoTransparentAction(action)
-                }
-            }
+        return if (processOutput.isNotSuccess) {
+            ElmFormatResult.UnknownFailure("Process output exit code was non-zero", cause = null)
+        } else {
+            ElmFormatResult.Success(formatted = processOutput.stdout)
         }
-        return ElmFormatResult.Success()
     }
 
+    fun formatDocumentAndSetText(
+        project: Project,
+        document: Document,
+        version: Version
+    ): ElmFormatResult {
+
+        val result =
+            ProgressManager.getInstance().runProcessWithProgressSynchronously<ElmFormatResult, ExecutionException>({
+                format(document, version)
+            }, "Running elm-format on current file...", true, project)
+
+        if (result is ElmFormatResult.Success) {
+            val formatted = result.formatted
+            val source = document.text
+
+            if (source != formatted) {
+                CommandProcessor.getInstance()
+                        .executeCommand(
+                            project,
+                            { ApplicationManager.getApplication().runWriteAction { document.setText(formatted) } },
+                            "Run elm-format on current file",
+                            null,
+                            document)
+            }
+        }
+        return result
+    }
 
     fun queryVersion(): Result<Version> {
         // Output of `elm-format` is multiple lines where the first line is something like 'elm-format 0.8.1'.
@@ -106,14 +115,19 @@ class ElmFormatCLI(private val elmFormatExecutablePath: Path) {
     }
 
     companion object {
-        fun getElmVersion(project: Project, file: VirtualFile): Version? {
-            val psiFile = ElmFile.fromVirtualFile(file, project) ?: return null
+        fun getElmVersion(file: PsiFile): Version? {
+            val psiFile = file as? ElmFile ?: return null
 
             return when (val elmProject = psiFile.elmProject) {
                 is ElmApplicationProject -> elmProject.elmVersion
                 is ElmPackageProject -> elmProject.elmVersion.low
                 else -> return null
             }
+        }
+
+        fun getElmVersion(project: Project, file: VirtualFile): Version? {
+            val psiFile = ElmFile.fromVirtualFile(file, project) ?: return null
+            return getElmVersion(psiFile)
         }
     }
 }
